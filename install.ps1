@@ -1,6 +1,6 @@
 <#
-  claude-code-dotfiles セットアップスクリプト
-  新しいWindows PCでこのリポジトリをcloneした後、このスクリプトを実行してください。
+  claude-code-dotfiles setup script
+  After cloning this repo on a new Windows PC, run:
     cd $HOME\claude-code-dotfiles
     .\install.ps1
 #>
@@ -13,53 +13,53 @@ function Test-Command($name) {
     return [bool](Get-Command $name -ErrorAction SilentlyContinue)
 }
 
-Write-Host "=== 1. 必要なツールを確認・導入します ===" -ForegroundColor Cyan
+Write-Host "=== 1. Checking required tools ===" -ForegroundColor Cyan
 
 if (-not (Test-Command "git")) {
-    Write-Host "Git を導入します..."
+    Write-Host "Installing Git..."
     winget install --id Git.Git -e --accept-package-agreements --accept-source-agreements
 } else {
     Write-Host "Git: OK"
 }
 
 if (-not (Test-Command "node")) {
-    Write-Host "Node.js を導入します..."
+    Write-Host "Installing Node.js..."
     winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements
 } else {
     Write-Host "Node.js: OK"
 }
 
 if (-not (Test-Command "gh")) {
-    Write-Host "GitHub CLI を導入します..."
+    Write-Host "Installing GitHub CLI..."
     winget install --id GitHub.cli -e --accept-package-agreements --accept-source-agreements
 } else {
     Write-Host "GitHub CLI: OK"
 }
 
-# winget直後はPATHが未反映のことがあるため、このプロセスのPATHを更新
+# Refresh PATH for this process (winget/npm may not be visible yet)
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 
 if (-not (Test-Command "claude")) {
-    Write-Host "Claude Code CLI を導入します..."
+    Write-Host "Installing Claude Code CLI..."
     npm install -g @anthropic-ai/claude-code
 } else {
     Write-Host "Claude Code CLI: OK"
 }
 
 Write-Host ""
-Write-Host "=== 2. GitHub認証 ===" -ForegroundColor Cyan
-$ghStatus = & gh auth status 2>&1
+Write-Host "=== 2. GitHub authentication ===" -ForegroundColor Cyan
+$null = & gh auth status 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "GitHubにログインしていません。次のコマンドを実行してログインしてください:" -ForegroundColor Yellow
+    Write-Host "Not logged in to GitHub. Please run:" -ForegroundColor Yellow
     Write-Host "  gh auth login" -ForegroundColor Yellow
-    Write-Host "ログイン後、このスクリプトをもう一度実行してください。"
+    Write-Host "Then run this script again."
     exit 1
 } else {
-    Write-Host "GitHub認証: OK"
+    Write-Host "GitHub auth: OK"
 }
 
 Write-Host ""
-Write-Host "=== 3. Claude Code設定をこのリポジトリにリンクします ===" -ForegroundColor Cyan
+Write-Host "=== 3. Linking Claude Code config to this repo ===" -ForegroundColor Cyan
 
 if (-not (Test-Path $ClaudeDir)) {
     New-Item -ItemType Directory -Path $ClaudeDir | Out-Null
@@ -72,21 +72,23 @@ function Link-ConfigFile($fileName) {
     if (Test-Path $linkPath) {
         $existing = Get-Item $linkPath -Force
         if ($existing.LinkType -eq "SymbolicLink") {
-            Write-Host "$fileName : 既にリンク済みです"
+            Write-Host "$fileName : already linked"
             return
         }
         $backupPath = "$linkPath.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-        Write-Host "$fileName の既存ファイルを $backupPath にバックアップします"
+        Write-Host "$fileName : backing up existing file to $backupPath"
         Move-Item -Path $linkPath -Destination $backupPath
     }
 
-    try {
-        New-Item -ItemType SymbolicLink -Path $linkPath -Target $target | Out-Null
-        Write-Host "$fileName : リンク完了" -ForegroundColor Green
-    } catch {
-        Write-Host "$fileName のシンボリックリンク作成に失敗しました。" -ForegroundColor Red
-        Write-Host "Windowsの「開発者モード」を有効にしてから再実行してください:" -ForegroundColor Yellow
-        Write-Host "  設定 > プライバシーとセキュリティ > 開発者向け > 開発者モード を ON"
+    # PowerShell's New-Item -ItemType SymbolicLink requires elevation even with
+    # Developer Mode on; cmd's mklink respects the unprivileged-create flag, so use that.
+    $mklinkOutput = cmd /c mklink "`"$linkPath`"" "`"$target`"" 2>&1
+    if (Test-Path $linkPath) {
+        Write-Host "$fileName : linked" -ForegroundColor Green
+    } else {
+        Write-Host "$fileName : failed to create symbolic link" -ForegroundColor Red
+        Write-Host $mklinkOutput
+        Write-Host "Enable Windows Developer Mode (Settings > Privacy & security > For developers) and sign out/in, then re-run this script." -ForegroundColor Yellow
     }
 }
 
@@ -94,6 +96,6 @@ Link-ConfigFile "CLAUDE.md"
 Link-ConfigFile "settings.json"
 
 Write-Host ""
-Write-Host "=== セットアップ完了 ===" -ForegroundColor Cyan
-Write-Host "claude --version / gh --version で導入を確認できます。"
-Write-Host "claude と入力してClaude Codeを起動してみてください。"
+Write-Host "=== Setup complete ===" -ForegroundColor Cyan
+Write-Host "Run 'claude --version' / 'gh --version' to verify."
+Write-Host "Run 'claude' to start Claude Code."
